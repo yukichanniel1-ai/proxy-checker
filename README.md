@@ -30,7 +30,15 @@ Every file scrapes **HTTP + SOCKS4 + SOCKS5** -> checks speed (keeps only **5ms-
 ```json
 {
     "telegram_bot_token": "123456:ABC-DEF...",
-    "chat_ids": ["123456789", "-1001234567890"],
+
+    "chat_ids": {
+        "proxy-file1": ["123456789"],
+        "proxy-file2": ["987654321"],
+        "proxy-file3": ["123456789", "987654321"],
+        "proxy-file4": ["123456789"],
+        "proxy-file5": ["987654321"]
+    },
+
     "checker": {
         "timeout_ms": 5000,
         "max_concurrent": 300,
@@ -39,6 +47,11 @@ Every file scrapes **HTTP + SOCKS4 + SOCKS5** -> checks speed (keeps only **5ms-
     }
 }
 ```
+
+Each proxy file sends to its **own list of chat IDs**. You can:
+- Put different IDs for each file (each file goes to different chats)
+- Put the same ID in multiple files (one chat receives from multiple files)
+- Put multiple IDs in one file (one file sends to multiple chats)
 
 **Bot token:** Message [@BotFather](https://t.me/BotFather) -> `/newbot`
 **Chat ID:** Message [@userinfobot](https://t.me/userinfobot)

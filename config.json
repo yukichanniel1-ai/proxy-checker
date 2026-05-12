@@ -1,9 +1,14 @@
 {
   "telegram_bot_token": "YOUR_BOT_TOKEN_HERE",
-  "chat_ids": [
-    "CHAT_ID_1",
-    "CHAT_ID_2"
-  ],
+
+  "chat_ids": {
+    "proxy-file1": ["CHAT_ID_HERE"],
+    "proxy-file2": ["CHAT_ID_HERE"],
+    "proxy-file3": ["CHAT_ID_HERE"],
+    "proxy-file4": ["CHAT_ID_HERE"],
+    "proxy-file5": ["CHAT_ID_HERE"]
+  },
+
   "checker": {
     "timeout_ms": 5000,
     "max_concurrent": 300,

@@ -142,9 +142,11 @@ function tgFile(token, chatId, content, filename, caption) {
 }
 
 async function broadcast(alive, dead, config) {
-  const token = config.telegram_bot_token || "", chatIds = config.chat_ids || [];
+  const token = config.telegram_bot_token || "";
   if (!token || token === "YOUR_BOT_TOKEN_HERE") return;
-  if (!chatIds.length || chatIds[0] === "CHAT_ID_1") return;
+  const allChatIds = config.chat_ids || {};
+  const chatIds = allChatIds["proxy-file1"] || [];
+  if (!chatIds.length || chatIds[0] === "CHAT_ID_HERE") return;
   const fileContent = alive.map(p => p.proxy).join("\n") + "\n";
   const summary = `Proxy File 1 | Fast: ${alive.length} | Dead: ${dead.length} | Fastest: ${alive.length > 0 ? alive[0].ms+"ms" : "-"}`;
   for (const chatId of chatIds) {
