@@ -1,5 +1,5 @@
 {
-  "telegram_bot_token": "YOUR_BOT_TOKEN_HERE",
+  "telegram_bot_token": "8844465468:AAE7Sy3Le_9rU4igI2M4nWvsjzTXmMh6grc",
 
   "chat_ids": {
     "proxy-file1": ["CHAT_ID_HERE"],
@@ -11,7 +11,7 @@
 
   "checker": {
     "timeout_ms": 5000,
-    "max_concurrent": 300,
+    "max_concurrent": 1000,
     "min_speed_ms": 5,
     "max_speed_ms": 1000,
     "proxy_types": ["http", "socks4", "socks5"],
