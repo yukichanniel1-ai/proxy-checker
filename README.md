@@ -50,7 +50,7 @@ npm i -g vercel
 vercel
 ```
 
-Vercel cron auto-triggers every 30 min. Each file runs independently.
+Vercel cron auto-triggers every 5 min. Each file runs independently.
 
 ### 3. Manual trigger
 
@@ -67,7 +67,7 @@ https://your-app.vercel.app/api/proxy-file5
 1. Scrapes proxies from its source URLs (all in parallel)
 2. Checks each proxy as HTTP, SOCKS5, SOCKS4 (tries all types)
 3. Keeps only fast proxies (5ms-1000ms response time)
-4. Sends summary + proxy files to Telegram chat IDs
+4. Sends `ip:port` only txt file to Telegram chat IDs
 5. Returns JSON with results
 
 ## Config

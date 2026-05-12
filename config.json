@@ -6,14 +6,12 @@
   ],
   "checker": {
     "timeout_ms": 5000,
-    "max_concurrent": 500,
+    "max_concurrent": 300,
     "min_speed_ms": 5,
     "max_speed_ms": 1000,
-    "check_google": true,
-    "google_timeout_ms": 8000,
     "proxy_types": ["http", "socks4", "socks5"],
     "output_format": "ip:port",
-    "refresh_interval_minutes": 30,
+    "refresh_interval_minutes": 5,
     "auto_loop": true
   }
 }

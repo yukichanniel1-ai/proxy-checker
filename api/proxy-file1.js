@@ -68,20 +68,20 @@ const JUDGES = ["http://api.ipify.org?format=json","http://checkip.amazonaws.com
 
 function checkWithHttp(proxy, judge, timeoutMs) {
   return new Promise(resolve => {
-    const start = Date.now();
+    const start = process.hrtime.bigint();
     const { HttpProxyAgent } = require("http-proxy-agent");
     const agent = new HttpProxyAgent(`http://${proxy}`);
-    const req = http.get(judge, { agent, timeout: timeoutMs }, res => { let d=""; res.on("data",c=>d+=c); res.on("end",()=>{ const ms=Date.now()-start; resolve(res.statusCode>=200&&res.statusCode<400?{ms,type:"http"}:null); }); });
+    const req = http.get(judge, { agent, timeout: timeoutMs }, res => { let d=""; res.on("data",c=>d+=c); res.on("end",()=>{ const ms=Number(process.hrtime.bigint()-start)/1e6|0; resolve(res.statusCode>=200&&res.statusCode<400?{ms,type:"http"}:null); }); });
     req.on("error",()=>resolve(null)); req.on("timeout",()=>{req.destroy();resolve(null);});
     setTimeout(()=>{req.destroy();resolve(null);},timeoutMs+500);
   });
 }
 function checkWithSocks(proxy, judge, socksType, timeoutMs) {
   return new Promise(resolve => {
-    const start = Date.now();
+    const start = process.hrtime.bigint();
     const { SocksProxyAgent } = require("socks-proxy-agent");
     const agent = new SocksProxyAgent(`${socksType}://${proxy}`);
-    const req = http.get(judge, { agent, timeout: timeoutMs }, res => { let d=""; res.on("data",c=>d+=c); res.on("end",()=>{ const ms=Date.now()-start; resolve(res.statusCode>=200&&res.statusCode<400?{ms,type:socksType}:null); }); });
+    const req = http.get(judge, { agent, timeout: timeoutMs }, res => { let d=""; res.on("data",c=>d+=c); res.on("end",()=>{ const ms=Number(process.hrtime.bigint()-start)/1e6|0; resolve(res.statusCode>=200&&res.statusCode<400?{ms,type:socksType}:null); }); });
     req.on("error",()=>resolve(null)); req.on("timeout",()=>{req.destroy();resolve(null);});
     setTimeout(()=>{req.destroy();resolve(null);},timeoutMs+500);
   });
@@ -145,20 +145,12 @@ async function broadcast(alive, dead, config) {
   const token = config.telegram_bot_token || "", chatIds = config.chat_ids || [];
   if (!token || token === "YOUR_BOT_TOKEN_HERE") return;
   if (!chatIds.length || chatIds[0] === "CHAT_ID_1") return;
-  const byType = {}; alive.forEach(p => { if (!byType[p.type]) byType[p.type] = []; byType[p.type].push(p); });
-  const summary = `<b>Proxy File 1 Update</b>\nFast (5-1000ms): ${alive.length}\n` +
-    Object.entries(byType).map(([t,items]) => `  ${t.toUpperCase()}: ${items.length}`).join("\n") +
-    `\nDead/Slow: ${dead.length}\nFastest: ${alive.length > 0 ? alive[0].ms+"ms" : "N/A"}`;
+  const fileContent = alive.map(p => p.proxy).join("\n") + "\n";
+  const summary = `Proxy File 1 | Fast: ${alive.length} | Dead: ${dead.length} | Fastest: ${alive.length > 0 ? alive[0].ms+"ms" : "-"}`;
   for (const chatId of chatIds) {
     await tgMsg(token, chatId, summary);
     if (alive.length > 0) {
-      const all = alive.map(p => p.proxy).join("\n") + "\n";
-      await tgFile(token, chatId, all, "proxy_file1_all.txt", `${alive.length} fast proxies`);
-      for (const [type, items] of Object.entries(byType)) {
-        const content = items.map(p => p.proxy).join("\n") + "\n";
-        await tgFile(token, chatId, content, `proxy_file1_${type}.txt`, `${items.length} ${type.toUpperCase()}`);
-        await new Promise(r => setTimeout(r, 500));
-      }
+      await tgFile(token, chatId, fileContent, "proxy_file1.txt", `${alive.length} proxies (ip:port)`);
     }
   }
 }

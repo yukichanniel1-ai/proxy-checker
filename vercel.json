@@ -1,10 +1,10 @@
 {
   "crons": [
-    { "path": "/api/proxy-file1", "schedule": "*/30 * * * *" },
-    { "path": "/api/proxy-file2", "schedule": "*/30 * * * *" },
-    { "path": "/api/proxy-file3", "schedule": "*/30 * * * *" },
-    { "path": "/api/proxy-file4", "schedule": "*/30 * * * *" },
-    { "path": "/api/proxy-file5", "schedule": "*/30 * * * *" }
+    { "path": "/api/proxy-file1", "schedule": "*/5 * * * *" },
+    { "path": "/api/proxy-file2", "schedule": "*/5 * * * *" },
+    { "path": "/api/proxy-file3", "schedule": "*/5 * * * *" },
+    { "path": "/api/proxy-file4", "schedule": "*/5 * * * *" },
+    { "path": "/api/proxy-file5", "schedule": "*/5 * * * *" }
   ],
   "functions": {
     "api/proxy-file1.js": { "maxDuration": 300 },
