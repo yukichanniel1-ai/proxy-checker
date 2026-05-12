@@ -1,34 +1,16 @@
 {
   "crons": [
-    {
-      "path": "/api/scrape-http",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/scrape-socks4",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/scrape-socks5",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/scrape-all",
-      "schedule": "0 * * * *"
-    }
+    { "path": "/api/proxy-file1", "schedule": "*/30 * * * *" },
+    { "path": "/api/proxy-file2", "schedule": "*/30 * * * *" },
+    { "path": "/api/proxy-file3", "schedule": "*/30 * * * *" },
+    { "path": "/api/proxy-file4", "schedule": "*/30 * * * *" },
+    { "path": "/api/proxy-file5", "schedule": "*/30 * * * *" }
   ],
   "functions": {
-    "api/scrape-http.js": {
-      "maxDuration": 300
-    },
-    "api/scrape-socks4.js": {
-      "maxDuration": 300
-    },
-    "api/scrape-socks5.js": {
-      "maxDuration": 300
-    },
-    "api/scrape-all.js": {
-      "maxDuration": 300
-    }
+    "api/proxy-file1.js": { "maxDuration": 300 },
+    "api/proxy-file2.js": { "maxDuration": 300 },
+    "api/proxy-file3.js": { "maxDuration": 300 },
+    "api/proxy-file4.js": { "maxDuration": 300 },
+    "api/proxy-file5.js": { "maxDuration": 300 }
   }
 }

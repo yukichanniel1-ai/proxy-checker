@@ -1,109 +1,88 @@
 # Proxy Checker + Telegram Bot (Vercel)
 
-Ultra-fast proxy scraper and checker with Telegram auto-send. Deploys on Vercel with cron auto-trigger.
-
-Each file is **completely standalone** -- everything (scraper, checker, Telegram sender) in ONE file.
+Ultra-fast proxy scraper and checker with Telegram auto-send. Each file is **1 complete standalone file** with different proxy source links.
 
 ## Files
 
-| File | What it does | Proxy Sources |
-|------|-------------|---------------|
-| `api/scrape-http.js` | HTTP proxies | ProxyScrape, Proxifly, iplocate, litport, pubproxy, GeoNode, free-proxy-list.net, redscrape |
-| `api/scrape-socks4.js` | SOCKS4 proxies | ProxyScrape, Proxifly, iplocate, TheSpeedX, monosans, hookzof, GeoNode |
-| `api/scrape-socks5.js` | SOCKS5 proxies | ProxyScrape, Proxifly, iplocate, TheSpeedX, monosans, litport, pubproxy, GeoNode |
-| `api/scrape-all.js` | ALL types | All sources above combined (23+ sources) |
-| `config.json` | Settings | Bot token, chat IDs, speed filter, concurrency |
-| `vercel.json` | Cron schedule | Auto-triggers every 30 min |
+Each file is the **same code** but with **different proxy source URLs**:
 
-Each file scrapes -> checks speed (5ms-1000ms only) -> sends fast proxies to Telegram.
+| File | Sources |
+|------|---------|
+| `api/proxy-file1.js` | ProxyScrape, Proxifly, GeoNode |
+| `api/proxy-file2.js` | TheSpeedX, monosans, iplocate |
+| `api/proxy-file3.js` | gfpcom, prxchk, Thordata, komutan234 |
+| `api/proxy-file4.js` | litport, pubproxy, redscrape, free-proxy-list.net, naravid19, ShiftyTR |
+| `api/proxy-file5.js` | hookzof, sunny9577, ErcinDede, jetkai, roosterkid |
+
+Every file scrapes **HTTP + SOCKS4 + SOCKS5** -> checks speed (keeps only **5ms-1000ms**) -> sends to Telegram.
+
+## How to make more files
+
+1. Copy any `proxy-fileN.js`
+2. Change the `SOURCES` array to use different proxy links
+3. Update `vercel.json` to add the cron
+4. Deploy
 
 ## Setup
 
-### 1. Configure `config.json`
+### 1. Edit `config.json`
 
 ```json
 {
     "telegram_bot_token": "123456:ABC-DEF...",
-    "chat_ids": [
-        "123456789",
-        "-1001234567890"
-    ],
+    "chat_ids": ["123456789", "-1001234567890"],
     "checker": {
         "timeout_ms": 5000,
         "max_concurrent": 300,
-        "min_speed_ms": 5,
-        "max_speed_ms": 1000,
-        "check_google": true,
-        "proxy_types": ["http", "socks4", "socks5"],
-        "refresh_interval_minutes": 30,
-        "auto_loop": true
-    }
-}
-```
-
-**Get bot token:** Message [@BotFather](https://t.me/BotFather) -> `/newbot` -> copy token
-
-**Get chat ID:** Message [@userinfobot](https://t.me/userinfobot) for your ID. For groups: add bot to group, then check `https://api.telegram.org/bot<TOKEN>/getUpdates`
-
-### 2. Deploy to Vercel
-
-```bash
-npm install -g vercel
-vercel
-```
-
-That's it. Vercel cron will auto-trigger the scrapers every 30 minutes and send proxy files to your Telegram.
-
-### 3. Manual trigger
-
-Visit these URLs to trigger manually:
-- `https://your-app.vercel.app/api/scrape-http`
-- `https://your-app.vercel.app/api/scrape-socks4`
-- `https://your-app.vercel.app/api/scrape-socks5`
-- `https://your-app.vercel.app/api/scrape-all`
-
-Each returns JSON with the results and sends files to Telegram.
-
-## Cron Schedule (vercel.json)
-
-| Endpoint | Schedule | Description |
-|----------|----------|-------------|
-| `/api/scrape-http` | Every 30 min | HTTP proxies |
-| `/api/scrape-socks4` | Every 30 min | SOCKS4 proxies |
-| `/api/scrape-socks5` | Every 30 min | SOCKS5 proxies |
-| `/api/scrape-all` | Every hour | All types combined |
-
-## Speed Filter
-
-Only proxies with response time **5ms to 1000ms** are kept and sent. Change in `config.json`:
-
-```json
-{
-    "checker": {
         "min_speed_ms": 5,
         "max_speed_ms": 1000
     }
 }
 ```
 
-## Config Options
+**Bot token:** Message [@BotFather](https://t.me/BotFather) -> `/newbot`
+**Chat ID:** Message [@userinfobot](https://t.me/userinfobot)
+
+### 2. Deploy to Vercel
+
+```bash
+npm i -g vercel
+vercel
+```
+
+Vercel cron auto-triggers every 30 min. Each file runs independently.
+
+### 3. Manual trigger
+
+```
+https://your-app.vercel.app/api/proxy-file1
+https://your-app.vercel.app/api/proxy-file2
+https://your-app.vercel.app/api/proxy-file3
+https://your-app.vercel.app/api/proxy-file4
+https://your-app.vercel.app/api/proxy-file5
+```
+
+## What each file does (everything in 1 file)
+
+1. Scrapes proxies from its source URLs (all in parallel)
+2. Checks each proxy as HTTP, SOCKS5, SOCKS4 (tries all types)
+3. Keeps only fast proxies (5ms-1000ms response time)
+4. Sends summary + proxy files to Telegram chat IDs
+5. Returns JSON with results
+
+## Config
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `telegram_bot_token` | `""` | Telegram bot API token |
-| `chat_ids` | `[]` | Chat IDs to send proxy files to |
+| `telegram_bot_token` | `""` | Telegram bot token |
+| `chat_ids` | `[]` | Chat IDs to send files to |
 | `timeout_ms` | `5000` | Proxy check timeout |
-| `max_concurrent` | `300` | Concurrent checks (higher = faster) |
-| `min_speed_ms` | `5` | Min response time to accept |
-| `max_speed_ms` | `1000` | Max response time to accept |
-| `proxy_types` | `["http","socks4","socks5"]` | Types to check (for scrape-all) |
+| `max_concurrent` | `300` | Concurrent checks |
+| `min_speed_ms` | `5` | Min speed to keep |
+| `max_speed_ms` | `1000` | Max speed to keep |
 
-## Using for Multiple Bots
+## Vercel Limits
 
-Each `api/*.js` file is standalone. Copy any file, change the `SOURCES` array to use different proxy links, and deploy. Each file works independently as its own bot.
-
-## Note on Vercel Limits
-
-- **Hobby plan**: 10s function timeout (may not finish checking all proxies)
-- **Pro plan**: 300s timeout (recommended for full checks)
-- Cron jobs require Vercel Pro plan for custom schedules
+- Hobby: 10s timeout (may timeout)
+- Pro: 300s timeout (recommended)
+- Cron needs Pro plan for custom schedules
