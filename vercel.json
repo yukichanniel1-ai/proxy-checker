@@ -1,0 +1,34 @@
+{
+  "crons": [
+    {
+      "path": "/api/scrape-http",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/scrape-socks4",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/scrape-socks5",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/scrape-all",
+      "schedule": "0 * * * *"
+    }
+  ],
+  "functions": {
+    "api/scrape-http.js": {
+      "maxDuration": 300
+    },
+    "api/scrape-socks4.js": {
+      "maxDuration": 300
+    },
+    "api/scrape-socks5.js": {
+      "maxDuration": 300
+    },
+    "api/scrape-all.js": {
+      "maxDuration": 300
+    }
+  }
+}

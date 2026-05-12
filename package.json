@@ -1,20 +1,15 @@
 {
   "name": "proxy-checker-telegram-bot",
   "version": "1.0.0",
-  "description": "Ultra-fast proxy scraper + checker with Telegram bot auto-send",
-  "main": "main.js",
+  "description": "Ultra-fast proxy scraper + checker with Telegram bot auto-send (Vercel)",
   "scripts": {
-    "start": "node main.js",
-    "scrape": "node src/scraper.js",
-    "check": "node src/checker.js",
-    "bot": "node src/bot.js"
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
   },
   "dependencies": {
-    "axios": "^1.7.0",
     "socks-proxy-agent": "^8.0.0",
     "http-proxy-agent": "^7.0.0",
     "https-proxy-agent": "^7.0.0",
-    "form-data": "^4.0.0",
-    "chalk": "^4.1.2"
+    "form-data": "^4.0.0"
   }
 }
