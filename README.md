@@ -14,6 +14,7 @@ Each file is the **same code** but with **different proxy source URLs**:
 | `api/proxy-file4.js` | litport, pubproxy, redscrape, free-proxy-list.net, naravid19, ShiftyTR |
 | `api/proxy-file5.js` | hookzof, sunny9577, ErcinDede, jetkai, roosterkid |
 | `api/telegram-webhook.js` | Telegram bot webhook — handles `/start`, `/upload_proxy`, `/proxy_done` commands |
+| `api/proxy-manager.js` | Raw proxy manager API — serves checked proxies as plain text or JSON |
 
 Every file scrapes **HTTP + SOCKS4 + SOCKS5** -> checks speed (keeps only **5ms-1000ms**) -> sends to Telegram.
 
@@ -74,6 +75,60 @@ https://your-app.vercel.app/api/proxy-file2
 https://your-app.vercel.app/api/proxy-file3
 https://your-app.vercel.app/api/proxy-file4
 https://your-app.vercel.app/api/proxy-file5
+```
+
+## Proxy Manager API (Raw)
+
+Hit the endpoint and get raw checked proxies — no bot needed.
+
+### Endpoints
+
+```
+GET /api/proxy-manager                        → all proxies, raw ip:port
+GET /api/proxy-manager?type=http              → HTTP proxies only
+GET /api/proxy-manager?type=socks4            → SOCKS4 only
+GET /api/proxy-manager?type=socks5            → SOCKS5 only
+GET /api/proxy-manager?format=json            → JSON with speed + type
+GET /api/proxy-manager?type=http&limit=100    → first 100 HTTP proxies
+GET /api/proxy-manager?format=json&limit=50   → top 50 as JSON
+```
+
+### Raw response (default)
+
+```
+1.2.3.4:8080
+5.6.7.8:1080
+9.10.11.12:3128
+```
+
+### JSON response (`?format=json`)
+
+```json
+{
+  "total_scraped": 5000,
+  "total_alive": 320,
+  "total_dead": 4680,
+  "returned": 320,
+  "elapsed_sec": "45.2",
+  "type_filter": "all",
+  "proxies": [
+    { "proxy": "1.2.3.4:8080", "ms": 12, "type": "http" },
+    { "proxy": "5.6.7.8:1080", "ms": 25, "type": "socks5" }
+  ]
+}
+```
+
+### Example usage
+
+```bash
+# Get all raw proxies
+curl https://your-app.vercel.app/api/proxy-manager
+
+# Get only HTTP proxies
+curl https://your-app.vercel.app/api/proxy-manager?type=http
+
+# Get top 50 fastest as JSON
+curl https://your-app.vercel.app/api/proxy-manager?format=json&limit=50
 ```
 
 ## Telegram Bot Commands
