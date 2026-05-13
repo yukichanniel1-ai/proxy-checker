@@ -451,6 +451,29 @@ function startServer() {
         return;
       }
 
+      // Auto-download endpoint — saves .txt file directly
+      if (pathname === "/download") {
+        const type = (url.searchParams.get("type") || "all").toLowerCase();
+        const limit = parseInt(url.searchParams.get("limit") || "0") || 0;
+
+        let filtered = type === "all" ? liveProxies : liveProxies.filter((p) => p.type === type);
+        if (limit > 0) filtered = filtered.slice(0, limit);
+
+        const typeLabel = type === "all" ? "all" : type;
+        const filename = `live_proxies_${typeLabel}_${filtered.length}.txt`;
+        const body = filtered.map((p) => p.proxy).join("\n") + (filtered.length ? "\n" : "");
+
+        res.writeHead(200, {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Content-Length": Buffer.byteLength(body),
+          "X-Total-Alive": String(stats.alive),
+          "X-Returned": String(filtered.length),
+        });
+        res.end(body);
+        return;
+      }
+
       if (pathname === "/" || pathname === "/proxies") {
         const type = (url.searchParams.get("type") || "all").toLowerCase();
         const format = (url.searchParams.get("format") || "raw").toLowerCase();
@@ -484,7 +507,7 @@ function startServer() {
       }
 
       res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Use / or /proxies or /health\n");
+      res.end("Use / or /proxies or /download or /health\n");
     } catch (err) {
       try {
         res.writeHead(500, { "Content-Type": "text/plain" });
@@ -500,6 +523,7 @@ function startServer() {
     console.log(`  GET /             → raw ip:port`);
     console.log(`  GET /?type=http   → HTTP only`);
     console.log(`  GET /?format=json → JSON`);
+    console.log(`  GET /download     → auto-download .txt`);
     console.log(`  GET /health       → stats\n`);
   });
 
