@@ -1,1 +1,1 @@
-worker: node proxy-all.js
+web: node proxy-all.js

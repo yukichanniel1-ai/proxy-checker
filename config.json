@@ -1,24 +1,9 @@
 {
-  "telegram_bot_token": "8844465468:AAE7Sy3Le_9rU4igI2M4nWvsjzTXmMh6grc",
-
-  "chat_ids": {
-    "proxy-file1": ["CHAT_ID_HERE"],
-    "proxy-file2": ["CHAT_ID_HERE"],
-    "proxy-file3": ["CHAT_ID_HERE"],
-    "proxy-file4": ["CHAT_ID_HERE"],
-    "proxy-file5": ["CHAT_ID_HERE"]
-  },
-
-  "target_ids": ["8564132165"],
-
   "checker": {
-    "timeout_ms": 5000,
-    "max_concurrent": 1000,
+    "timeout_ms": 3000,
+    "max_concurrent": 500,
     "min_speed_ms": 5,
     "max_speed_ms": 1000,
-    "proxy_types": ["http", "socks4", "socks5"],
-    "output_format": "ip:port",
-    "refresh_interval_minutes": 5,
-    "auto_loop": true
+    "refresh_interval_minutes": 5
   }
 }

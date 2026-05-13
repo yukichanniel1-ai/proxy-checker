@@ -1,11 +1,21 @@
 #!/usr/bin/env node
 /**
- * proxy-all.js -- All-in-One Proxy Scraper + Checker + Sender
+ * proxy-all.js -- All-in-One Proxy Scraper + Checker API
  *
  * Single file with ALL proxy sources combined.
  * Railway-stable: crash protection, memory safe, fast checking.
+ * Serves raw ip:port or JSON via HTTP API.
  *
  * Usage: node proxy-all.js
+ *
+ * Endpoints:
+ *   GET /             → raw ip:port (all types)
+ *   GET /?type=http   → HTTP only
+ *   GET /?type=socks4 → SOCKS4 only
+ *   GET /?type=socks5 → SOCKS5 only
+ *   GET /?format=json → JSON with speed + type info
+ *   GET /?limit=100   → limit results
+ *   GET /health       → health/stats
  */
 
 const http = require("http");
@@ -43,7 +53,7 @@ function loadConfig() {
 }
 
 // ═══════════════════════════════════════════════════════
-// ALL PROXY SOURCES (combined from proxy-file1..5)
+// ALL PROXY SOURCES (54 sources combined)
 // ═══════════════════════════════════════════════════════
 
 const SOURCES = [
@@ -136,17 +146,6 @@ function validate(p) {
 
 function extractIps(t) { return (t.match(IP_RE) || []).filter(validate); }
 
-function sleep(ms) {
-  return new Promise((r) => {
-    if (shuttingDown) { r(); return; }
-    const timer = setTimeout(r, ms);
-    const check = setInterval(() => {
-      if (shuttingDown) { clearTimeout(timer); clearInterval(check); r(); }
-    }, 1000);
-    setTimeout(() => clearInterval(check), ms + 100);
-  });
-}
-
 // ═══════════════════════════════════════════════════════
 // FAST HTTP GET (safe, single-resolve)
 // ═══════════════════════════════════════════════════════
@@ -219,7 +218,7 @@ async function scrapeAll() {
 }
 
 // ═══════════════════════════════════════════════════════
-// FAST PROXY CHECKER (TCP connect first, then protocol)
+// FAST PROXY CHECKER (TCP pre-check + protocol check)
 // ═══════════════════════════════════════════════════════
 
 const JUDGES = [
@@ -315,7 +314,6 @@ function checkWithSocks(proxy, judge, socksType, timeoutMs) {
 }
 
 async function checkProxy(proxy, timeoutMs) {
-  // Fast TCP pre-check — skip dead hosts immediately
   const [host, portStr] = proxy.split(":");
   const port = parseInt(portStr);
   const reachable = await tcpConnect(host, port, Math.min(timeoutMs, 2000));
@@ -375,213 +373,167 @@ async function checkAll(proxies, cfg = {}) {
 }
 
 // ═══════════════════════════════════════════════════════
-// TELEGRAM SENDER (retry + error logging)
+// CACHED PROXY LIST (background refresh)
 // ═══════════════════════════════════════════════════════
 
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10, timeout: 10000 });
+let cachedProxies = [];
+let cacheStats = { scraped: 0, alive: 0, dead: 0, elapsed: "0", lastUpdate: null, updating: false };
 
-async function tgSendMessage(token, chatId, text, retries = 3) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" });
-      const result = await new Promise((resolve) => {
-        let done = false;
-        const finish = (val) => { if (!done) { done = true; resolve(val); } };
-        const timer = setTimeout(() => finish({ ok: false, error: "timeout" }), 15000);
+async function refreshCache() {
+  if (cacheStats.updating) return;
+  cacheStats.updating = true;
+  const config = loadConfig();
+  const cfg = config.checker || {};
 
-        const req = https.request(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }, agent: httpsAgent, timeout: 10000 },
-          (res) => {
-            let d = "";
-            res.on("data", (c) => { d += c; });
-            res.on("end", () => {
-              clearTimeout(timer);
-              try { const j = JSON.parse(d); finish({ ok: j.ok, error: j.ok ? null : j.description }); }
-              catch (_) { finish({ ok: res.statusCode < 300, error: d }); }
-            });
-            res.on("error", () => { clearTimeout(timer); finish({ ok: false, error: "res error" }); });
-          }
-        );
-        req.on("error", (e) => { clearTimeout(timer); finish({ ok: false, error: e.message }); });
-        req.on("timeout", () => { clearTimeout(timer); try { req.destroy(); } catch (_) {} finish({ ok: false, error: "req timeout" }); });
-        req.write(payload);
-        req.end();
-      });
+  try {
+    console.log("[CACHE] Refreshing...");
+    const t0 = Date.now();
+    const proxies = await scrapeAll();
 
-      if (result.ok) return true;
-      console.error(`[TG] sendMessage fail #${attempt}: ${result.error}`);
-    } catch (e) { console.error(`[TG] sendMessage err #${attempt}: ${e.message}`); }
-    if (attempt < retries) await sleep(2000 * attempt);
+    if (proxies.length === 0) {
+      console.log("[CACHE] No proxies scraped");
+      cacheStats.updating = false;
+      return;
+    }
+
+    const { alive, deadCount } = await checkAll(proxies, cfg);
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+    cachedProxies = alive;
+    cacheStats = {
+      scraped: proxies.length,
+      alive: alive.length,
+      dead: deadCount,
+      elapsed,
+      lastUpdate: new Date().toISOString(),
+      updating: false,
+    };
+    console.log(`[CACHE] Updated: ${alive.length} alive / ${deadCount} dead in ${elapsed}s`);
+  } catch (err) {
+    console.error(`[CACHE] Error: ${err.message}`);
+    cacheStats.updating = false;
   }
-  return false;
-}
 
-async function tgSendDocument(token, chatId, content, filename, caption, retries = 3) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const result = await new Promise((resolve) => {
-        let done = false;
-        const finish = (val) => { if (!done) { done = true; resolve(val); } };
-        const timer = setTimeout(() => finish({ ok: false, error: "timeout" }), 30000);
-
-        const FormData = require("form-data");
-        const form = new FormData();
-        form.append("chat_id", String(chatId));
-        form.append("document", Buffer.from(content, "utf-8"), { filename });
-        if (caption) form.append("caption", caption.slice(0, 1024));
-
-        const url = new URL(`https://api.telegram.org/bot${token}/sendDocument`);
-        const req = https.request(
-          { hostname: url.hostname, path: url.pathname, method: "POST", headers: form.getHeaders(), timeout: 25000 },
-          (res) => {
-            let d = "";
-            res.on("data", (c) => { d += c; });
-            res.on("end", () => {
-              clearTimeout(timer);
-              try { const j = JSON.parse(d); finish({ ok: j.ok, error: j.ok ? null : j.description }); }
-              catch (_) { finish({ ok: res.statusCode < 300, error: d }); }
-            });
-            res.on("error", () => { clearTimeout(timer); finish({ ok: false, error: "res error" }); });
-          }
-        );
-        req.on("error", (e) => { clearTimeout(timer); finish({ ok: false, error: e.message }); });
-        req.on("timeout", () => { clearTimeout(timer); try { req.destroy(); } catch (_) {} finish({ ok: false, error: "req timeout" }); });
-        form.pipe(req);
-      });
-
-      if (result.ok) return true;
-      console.error(`[TG] sendDoc fail #${attempt}: ${result.error}`);
-    } catch (e) { console.error(`[TG] sendDoc err #${attempt}: ${e.message}`); }
-    if (attempt < retries) await sleep(2000 * attempt);
-  }
-  return false;
+  if (global.gc) global.gc();
 }
 
 // ═══════════════════════════════════════════════════════
-// HEALTH CHECK SERVER
+// HTTP API SERVER
 // ═══════════════════════════════════════════════════════
 
-let stats = { cycle: 0, lastAlive: 0, lastDead: 0, lastElapsed: "0", lastRun: null };
-
-function startHealthServer() {
+function startServer() {
   const port = process.env.PORT || 3000;
+  const config = loadConfig();
+  const refreshMs = (config.checker?.refresh_interval_minutes || 5) * 60 * 1000;
+
   const server = http.createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      status: shuttingDown ? "shutting_down" : "running",
-      uptime: Math.floor(process.uptime()),
-      memory: Math.round(process.memoryUsage().rss / 1024 / 1024) + "MB",
-      ...stats,
-    }));
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET");
+
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const pathname = url.pathname;
+
+    // Health endpoint
+    if (pathname === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        status: shuttingDown ? "shutting_down" : "running",
+        uptime: Math.floor(process.uptime()),
+        memory: Math.round(process.memoryUsage().rss / 1024 / 1024) + "MB",
+        cache: cacheStats,
+      }));
+      return;
+    }
+
+    // Main proxy endpoint
+    if (pathname === "/" || pathname === "/proxies") {
+      const type = (url.searchParams.get("type") || "all").toLowerCase();
+      const format = (url.searchParams.get("format") || "raw").toLowerCase();
+      const limit = parseInt(url.searchParams.get("limit") || "0") || 0;
+
+      let filtered = cachedProxies;
+      if (type !== "all") {
+        filtered = cachedProxies.filter((p) => p.type === type);
+      }
+      if (limit > 0) {
+        filtered = filtered.slice(0, limit);
+      }
+
+      if (format === "json") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          total_scraped: cacheStats.scraped,
+          total_alive: cacheStats.alive,
+          total_dead: cacheStats.dead,
+          returned: filtered.length,
+          last_update: cacheStats.lastUpdate,
+          elapsed_sec: cacheStats.elapsed,
+          type_filter: type,
+          proxies: filtered.map((p) => ({ proxy: p.proxy, ms: p.ms, type: p.type })),
+        }));
+      } else {
+        res.writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "X-Total-Scraped": cacheStats.scraped,
+          "X-Total-Alive": cacheStats.alive,
+          "X-Total-Dead": cacheStats.dead,
+          "X-Returned": filtered.length,
+          "X-Last-Update": cacheStats.lastUpdate || "pending",
+        });
+        res.end(filtered.map((p) => p.proxy).join("\n") + (filtered.length ? "\n" : ""));
+      }
+      return;
+    }
+
+    // 404
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Not found. Use / or /proxies or /health" }));
   });
-  server.on("error", (err) => console.error(`[HEALTH] ${err.message}`));
-  server.listen(port, () => console.log(`[HEALTH] :${port}`));
+
+  server.on("error", (err) => console.error(`[SERVER] ${err.message}`));
+
+  server.listen(port, () => {
+    console.log(`[SERVER] Listening on :${port}`);
+    console.log(`[SERVER] Endpoints:`);
+    console.log(`  GET /             → raw ip:port`);
+    console.log(`  GET /?type=http   → HTTP only`);
+    console.log(`  GET /?type=socks4 → SOCKS4 only`);
+    console.log(`  GET /?type=socks5 → SOCKS5 only`);
+    console.log(`  GET /?format=json → JSON`);
+    console.log(`  GET /?limit=100   → limit results`);
+    console.log(`  GET /health       → stats`);
+  });
+
+  // Initial refresh
+  refreshCache();
+
+  // Auto-refresh on interval
+  setInterval(() => {
+    if (!shuttingDown) refreshCache();
+  }, refreshMs);
+
   return server;
 }
 
 // ═══════════════════════════════════════════════════════
-// MAIN LOOP
+// MAIN
 // ═══════════════════════════════════════════════════════
 
-async function main() {
+function main() {
   const config = loadConfig();
-  const token = config.telegram_bot_token || "";
-  const targetIds = config.target_ids || [];
-  const targetId = targetIds[0] || "";
   const cfg = config.checker || {};
-  const delayMs = (cfg.refresh_interval_minutes || 5) * 60 * 1000;
-
-  if (!token) { console.error("Error: telegram_bot_token not set in config.json"); process.exit(1); }
-  if (!targetId) { console.error("Error: target_ids not set in config.json"); process.exit(1); }
+  const refreshMin = cfg.refresh_interval_minutes || 5;
 
   console.log("═══════════════════════════════════════");
-  console.log("  Proxy All-in-One (Railway Stable)");
+  console.log("  Proxy Manager API (Railway Stable)");
   console.log("═══════════════════════════════════════");
   console.log(`Sources: ${SOURCES.length}`);
-  console.log(`Target: ${targetId}`);
-  console.log(`Interval: ${delayMs / 60000}m`);
+  console.log(`Refresh: ${refreshMin}m`);
   console.log(`Concurrency: ${Math.min(cfg.max_concurrent || 500, 500)}`);
   console.log(`Timeout: ${cfg.timeout_ms || 3000}ms`);
   console.log("═══════════════════════════════════════\n");
 
-  startHealthServer();
-
-  let cycle = 0;
-  while (!shuttingDown) {
-    cycle++;
-    stats.cycle = cycle;
-    console.log(`\n[CYCLE ${cycle}] Starting...`);
-
-    try {
-      // 1. Scrape
-      const proxies = await scrapeAll();
-      if (shuttingDown) break;
-
-      if (proxies.length === 0) {
-        console.log(`[CYCLE ${cycle}] No proxies found, retry in ${delayMs / 60000}m`);
-        await sleep(delayMs);
-        continue;
-      }
-
-      // 2. Check
-      const t0 = Date.now();
-      const { alive, deadCount } = await checkAll(proxies, cfg);
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-      console.log(`[CYCLE ${cycle}] Done in ${elapsed}s → Live: ${alive.length} | Dead: ${deadCount}`);
-
-      stats.lastAlive = alive.length;
-      stats.lastDead = deadCount;
-      stats.lastElapsed = elapsed;
-      stats.lastRun = new Date().toISOString();
-
-      if (shuttingDown) break;
-
-      if (alive.length === 0) {
-        console.log(`[CYCLE ${cycle}] No live proxies, retry in ${delayMs / 60000}m`);
-        await sleep(delayMs);
-        continue;
-      }
-
-      // 3. Send to Telegram
-      const byType = {};
-      alive.forEach((p) => { byType[p.type] = (byType[p.type] || 0) + 1; });
-      const typeStr = Object.entries(byType).map(([t, c]) => `${t}:${c}`).join(" | ");
-      const summary =
-        `<b>Proxy Check — Cycle ${cycle}</b>\n` +
-        `Sources: ${SOURCES.length}\n` +
-        `Scraped: ${proxies.length}\n` +
-        `Live: <b>${alive.length}</b> | Dead: ${deadCount}\n` +
-        `Types: ${typeStr}\n` +
-        `Fastest: ${alive[0].ms}ms | Time: ${elapsed}s`;
-
-      console.log(`[CYCLE ${cycle}] Sending to ${targetId}...`);
-      const msgOk = await tgSendMessage(token, targetId, summary);
-      if (!msgOk) {
-        console.error(`[CYCLE ${cycle}] Failed to send — check target_id or /start the bot first`);
-        await sleep(delayMs);
-        continue;
-      }
-
-      const fileContent = alive.map((p) => p.proxy).join("\n") + "\n";
-      const filename = `proxies_cycle${cycle}.txt`;
-      const caption = `${alive.length} live proxies | Fastest: ${alive[0].ms}ms | ${elapsed}s`;
-      const fileOk = await tgSendDocument(token, targetId, fileContent, filename, caption);
-      if (!fileOk) console.error(`[CYCLE ${cycle}] Failed to send file`);
-      else console.log(`[CYCLE ${cycle}] Sent ${alive.length} proxies`);
-
-    } catch (err) {
-      console.error(`[CYCLE ${cycle}] Error: ${err.message}`);
-    }
-
-    if (global.gc) global.gc();
-    console.log(`[CYCLE ${cycle}] Next in ${delayMs / 60000}m`);
-    if (!shuttingDown) await sleep(delayMs);
-  }
-
-  console.log("[MAIN] Stopped.");
-  httpsAgent.destroy();
-  process.exit(0);
+  startServer();
 }
 
-main().catch((err) => { console.error("Fatal:", err); process.exit(1); });
+main();

@@ -1,18 +1,10 @@
 {
-  "crons": [
-    { "path": "/api/proxy-file1", "schedule": "*/5 * * * *" },
-    { "path": "/api/proxy-file2", "schedule": "*/5 * * * *" },
-    { "path": "/api/proxy-file3", "schedule": "*/5 * * * *" },
-    { "path": "/api/proxy-file4", "schedule": "*/5 * * * *" },
-    { "path": "/api/proxy-file5", "schedule": "*/5 * * * *" }
-  ],
   "functions": {
     "api/proxy-file1.js": { "maxDuration": 300 },
     "api/proxy-file2.js": { "maxDuration": 300 },
     "api/proxy-file3.js": { "maxDuration": 300 },
     "api/proxy-file4.js": { "maxDuration": 300 },
     "api/proxy-file5.js": { "maxDuration": 300 },
-    "api/telegram-webhook.js": { "maxDuration": 300 },
     "api/proxy-manager.js": { "maxDuration": 300 }
   }
 }
