@@ -9,6 +9,8 @@
     "proxy-file5": ["CHAT_ID_HERE"]
   },
 
+  "target_ids": ["TARGET_BOT_CHAT_ID_HERE"],
+
   "checker": {
     "timeout_ms": 5000,
     "max_concurrent": 1000,

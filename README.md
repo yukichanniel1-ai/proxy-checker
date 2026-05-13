@@ -106,6 +106,40 @@ https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://your-app.ver
 
 Replace `<YOUR_BOT_TOKEN>` with your bot token and `your-app.vercel.app` with your Vercel domain.
 
+## Worker Script (Bot-to-Bot)
+
+`worker.js` runs 5 concurrent workers that scrape, check, and send proxies to a target bot automatically.
+
+### Worker Cycle (per bot)
+
+1. **Check** — Scrape proxies from assigned sources, check if live
+2. **Handshake** — Send `/start` to the target bot
+3. **Command** — Send `/upload_proxy`
+4. **Upload** — Attach the file of checked proxies
+5. **Signal** — Send `/proxy_done`
+6. **Loop** — Wait `refresh_interval_minutes`, repeat
+
+### Setup
+
+1. Add `target_ids` to `config.json` — the chat ID(s) where the target bot receives messages:
+
+```json
+{
+  "target_ids": ["123456789"]
+}
+```
+
+Each worker sends to its own target ID (by index). If fewer target IDs than workers, all workers use the first one.
+
+2. Install dependencies and run:
+
+```bash
+npm install
+node worker.js
+```
+
+The worker runs continuously. Each of the 5 threads checks proxies from different sources (same as proxy-file1..5) and sends results to the target bot.
+
 ## What each file does (everything in 1 file)
 
 1. Scrapes proxies from its source URLs (all in parallel)
@@ -120,6 +154,7 @@ Replace `<YOUR_BOT_TOKEN>` with your bot token and `your-app.vercel.app` with yo
 |-----|---------|-------------|
 | `telegram_bot_token` | `""` | Telegram bot token |
 | `chat_ids` | `[]` | Chat IDs to send files to |
+| `target_ids` | `[]` | Target chat IDs for bot-to-bot worker |
 | `timeout_ms` | `5000` | Proxy check timeout |
 | `max_concurrent` | `300` | Concurrent checks |
 | `min_speed_ms` | `5` | Min speed to keep |
