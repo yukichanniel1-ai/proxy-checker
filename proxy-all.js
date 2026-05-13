@@ -451,16 +451,10 @@ function startServer() {
         return;
       }
 
-      // Auto-download endpoint — saves .txt file directly
+      // Auto-download endpoint — saves .txt file directly (all live proxies)
       if (pathname === "/download") {
-        const type = (url.searchParams.get("type") || "all").toLowerCase();
-        const limit = parseInt(url.searchParams.get("limit") || "0") || 0;
-
-        let filtered = type === "all" ? liveProxies : liveProxies.filter((p) => p.type === type);
-        if (limit > 0) filtered = filtered.slice(0, limit);
-
-        const typeLabel = type === "all" ? "all" : type;
-        const filename = `live_proxies_${typeLabel}_${filtered.length}.txt`;
+        const filtered = liveProxies;
+        const filename = `live_proxies_${filtered.length}.txt`;
         const body = filtered.map((p) => p.proxy).join("\n") + (filtered.length ? "\n" : "");
 
         res.writeHead(200, {
@@ -477,10 +471,8 @@ function startServer() {
       if (pathname === "/" || pathname === "/proxies") {
         const type = (url.searchParams.get("type") || "all").toLowerCase();
         const format = (url.searchParams.get("format") || "raw").toLowerCase();
-        const limit = parseInt(url.searchParams.get("limit") || "0") || 0;
 
-        let filtered = type === "all" ? liveProxies : liveProxies.filter((p) => p.type === type);
-        if (limit > 0) filtered = filtered.slice(0, limit);
+        const filtered = type === "all" ? liveProxies : liveProxies.filter((p) => p.type === type);
 
         if (format === "json") {
           res.writeHead(200, { "Content-Type": "application/json" });
