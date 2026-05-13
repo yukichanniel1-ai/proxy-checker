@@ -11,6 +11,7 @@
     "api/proxy-file2.js": { "maxDuration": 300 },
     "api/proxy-file3.js": { "maxDuration": 300 },
     "api/proxy-file4.js": { "maxDuration": 300 },
-    "api/proxy-file5.js": { "maxDuration": 300 }
+    "api/proxy-file5.js": { "maxDuration": 300 },
+    "api/telegram-webhook.js": { "maxDuration": 300 }
   }
 }

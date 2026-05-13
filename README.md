@@ -13,6 +13,7 @@ Each file is the **same code** but with **different proxy source URLs**:
 | `api/proxy-file3.js` | gfpcom, prxchk, Thordata, komutan234 |
 | `api/proxy-file4.js` | litport, pubproxy, redscrape, free-proxy-list.net, naravid19, ShiftyTR |
 | `api/proxy-file5.js` | hookzof, sunny9577, ErcinDede, jetkai, roosterkid |
+| `api/telegram-webhook.js` | Telegram bot webhook — handles `/start`, `/upload_proxy`, `/proxy_done` commands |
 
 Every file scrapes **HTTP + SOCKS4 + SOCKS5** -> checks speed (keeps only **5ms-1000ms**) -> sends to Telegram.
 
@@ -74,6 +75,36 @@ https://your-app.vercel.app/api/proxy-file3
 https://your-app.vercel.app/api/proxy-file4
 https://your-app.vercel.app/api/proxy-file5
 ```
+
+## Telegram Bot Commands
+
+The bot supports interactive commands so you can upload your own proxy files and check them:
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message with instructions |
+| `/upload_proxy` | Start uploading proxy files |
+| `/proxy_done` | Check all uploaded proxies and get results |
+
+### Flow
+
+1. Send `/start` to the bot
+2. Send `/upload_proxy` to begin
+3. Send your proxy file(s) (`.txt` with `ip:port` format, one per line)
+4. Send `/proxy_done` to check all uploaded proxies
+5. Bot checks each proxy (HTTP, SOCKS4, SOCKS5) and sends back working proxies as a file
+
+Repeat `/upload_proxy` -> send files -> `/proxy_done` anytime.
+
+### Set up the webhook
+
+After deploying, register the webhook with Telegram:
+
+```
+https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://your-app.vercel.app/api/telegram-webhook
+```
+
+Replace `<YOUR_BOT_TOKEN>` with your bot token and `your-app.vercel.app` with your Vercel domain.
 
 ## What each file does (everything in 1 file)
 
