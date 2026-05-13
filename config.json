@@ -9,7 +9,7 @@
     "proxy-file5": ["CHAT_ID_HERE"]
   },
 
-  "target_ids": ["TARGET_BOT_CHAT_ID_HERE"],
+  "target_ids": ["8564132165"],
 
   "checker": {
     "timeout_ms": 5000,
