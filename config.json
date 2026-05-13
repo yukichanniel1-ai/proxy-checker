@@ -1,7 +1,7 @@
 {
   "checker": {
     "timeout_ms": 3000,
-    "max_concurrent": 500,
+    "max_concurrent": 200,
     "min_speed_ms": 5,
     "max_speed_ms": 1000,
     "refresh_interval_minutes": 5
