@@ -13,6 +13,8 @@ Each file is the **same code** but with **different proxy source URLs**:
 | `api/proxy-file3.js` | gfpcom, prxchk, Thordata, komutan234 |
 | `api/proxy-file4.js` | litport, pubproxy, redscrape, free-proxy-list.net, naravid19, ShiftyTR |
 | `api/proxy-file5.js` | hookzof, sunny9577, ErcinDede, jetkai, roosterkid |
+| `api/telegram-webhook.js` | Telegram bot webhook — handles `/start`, `/upload_proxy`, `/proxy_done` commands |
+| `api/proxy-manager.js` | Raw proxy manager API — serves checked proxies as plain text or JSON |
 
 Every file scrapes **HTTP + SOCKS4 + SOCKS5** -> checks speed (keeps only **5ms-1000ms**) -> sends to Telegram.
 
@@ -75,6 +77,124 @@ https://your-app.vercel.app/api/proxy-file4
 https://your-app.vercel.app/api/proxy-file5
 ```
 
+## Proxy Manager API (Raw)
+
+Hit the endpoint and get raw checked proxies — no bot needed.
+
+### Endpoints
+
+```
+GET /api/proxy-manager                        → all proxies, raw ip:port
+GET /api/proxy-manager?type=http              → HTTP proxies only
+GET /api/proxy-manager?type=socks4            → SOCKS4 only
+GET /api/proxy-manager?type=socks5            → SOCKS5 only
+GET /api/proxy-manager?format=json            → JSON with speed + type
+GET /api/proxy-manager?type=http&limit=100    → first 100 HTTP proxies
+GET /api/proxy-manager?format=json&limit=50   → top 50 as JSON
+```
+
+### Raw response (default)
+
+```
+1.2.3.4:8080
+5.6.7.8:1080
+9.10.11.12:3128
+```
+
+### JSON response (`?format=json`)
+
+```json
+{
+  "total_scraped": 5000,
+  "total_alive": 320,
+  "total_dead": 4680,
+  "returned": 320,
+  "elapsed_sec": "45.2",
+  "type_filter": "all",
+  "proxies": [
+    { "proxy": "1.2.3.4:8080", "ms": 12, "type": "http" },
+    { "proxy": "5.6.7.8:1080", "ms": 25, "type": "socks5" }
+  ]
+}
+```
+
+### Example usage
+
+```bash
+# Get all raw proxies
+curl https://your-app.vercel.app/api/proxy-manager
+
+# Get only HTTP proxies
+curl https://your-app.vercel.app/api/proxy-manager?type=http
+
+# Get top 50 fastest as JSON
+curl https://your-app.vercel.app/api/proxy-manager?format=json&limit=50
+```
+
+## Telegram Bot Commands
+
+The bot supports interactive commands so you can upload your own proxy files and check them:
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message with instructions |
+| `/upload_proxy` | Start uploading proxy files |
+| `/proxy_done` | Check all uploaded proxies and get results |
+
+### Flow
+
+1. Send `/start` to the bot
+2. Send `/upload_proxy` to begin
+3. Send your proxy file(s) (`.txt` with `ip:port` format, one per line)
+4. Send `/proxy_done` to check all uploaded proxies
+5. Bot checks each proxy (HTTP, SOCKS4, SOCKS5) and sends back working proxies as a file
+
+Repeat `/upload_proxy` -> send files -> `/proxy_done` anytime.
+
+### Set up the webhook
+
+After deploying, register the webhook with Telegram:
+
+```
+https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://your-app.vercel.app/api/telegram-webhook
+```
+
+Replace `<YOUR_BOT_TOKEN>` with your bot token and `your-app.vercel.app` with your Vercel domain.
+
+## Worker Script (Bot-to-Bot)
+
+`worker.js` runs 5 concurrent workers that scrape, check, and send proxies to a target bot automatically.
+
+### Worker Cycle (per bot)
+
+1. **Check** — Scrape proxies from assigned sources, check if live
+2. **Handshake** — Send `/start` to the target bot
+3. **Command** — Send `/upload_proxy`
+4. **Upload** — Attach the file of checked proxies
+5. **Signal** — Send `/proxy_done`
+6. **Loop** — Wait `refresh_interval_minutes`, repeat
+
+### Setup
+
+1. Add `target_ids` to `config.json` — the chat ID(s) where the target bot receives messages:
+
+```json
+{
+  "target_ids": ["123456789"]
+}
+```
+
+Each worker sends to its own target ID (by index). If fewer target IDs than workers, all workers use the first one.
+
+2. Install dependencies and run:
+
+```bash
+npm install
+node worker.js
+```
+
+The worker runs continuously. Each of the 5 threads checks proxies from different sources (same as proxy-file1..5) and sends results to the target bot.
+
 ## What each file does (everything in 1 file)
 
 1. Scrapes proxies from its source URLs (all in parallel)
@@ -89,6 +209,7 @@ https://your-app.vercel.app/api/proxy-file5
 |-----|---------|-------------|
 | `telegram_bot_token` | `""` | Telegram bot token |
 | `chat_ids` | `[]` | Chat IDs to send files to |
+| `target_ids` | `[]` | Target chat IDs for bot-to-bot worker |
 | `timeout_ms` | `5000` | Proxy check timeout |
 | `max_concurrent` | `300` | Concurrent checks |
 | `min_speed_ms` | `5` | Min speed to keep |

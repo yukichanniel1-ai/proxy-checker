@@ -4,7 +4,8 @@
   "description": "Ultra-fast proxy scraper + checker with Telegram bot auto-send (Vercel)",
   "scripts": {
     "dev": "vercel dev",
-    "deploy": "vercel --prod"
+    "deploy": "vercel --prod",
+    "worker": "node proxy-all.js"
   },
   "dependencies": {
     "socks-proxy-agent": "^8.0.0",
