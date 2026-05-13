@@ -429,7 +429,7 @@ async function runCheck() {
 // ═══════════════════════════════════════════════════════
 
 function startServer() {
-  const port = process.env.PORT || 3000;
+  const port = parseInt(process.env.PORT, 10) || 3000;
   const config = loadConfig();
   const refreshMs = (config.checker?.refresh_interval_minutes || 5) * 60 * 1000;
 
@@ -510,8 +510,8 @@ function startServer() {
   });
 
   server.on("error", (err) => console.error(`[SERVER] ${err.message}`));
-  server.listen(port, () => {
-    console.log(`[SERVER] :${port} ready`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`[SERVER] Listening on 0.0.0.0:${port}`);
     console.log(`  GET /             → raw ip:port`);
     console.log(`  GET /?type=http   → HTTP only`);
     console.log(`  GET /?format=json → JSON`);

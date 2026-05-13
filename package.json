@@ -1,11 +1,14 @@
 {
   "name": "proxy-checker-telegram-bot",
   "version": "1.0.0",
-  "description": "Ultra-fast proxy scraper + checker with Telegram bot auto-send (Vercel)",
+  "description": "Proxy Manager API — scrapes + checks + serves live proxies",
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod",
     "start": "node proxy-all.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "socks-proxy-agent": "^8.0.0",
