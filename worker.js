@@ -381,11 +381,11 @@ async function tgSendMessage(token, chatId, text, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" });
-      const ok = await new Promise((resolve) => {
+      const result = await new Promise((resolve) => {
         let resolved = false;
         const done = (val) => { if (!resolved) { resolved = true; resolve(val); } };
 
-        const timer = setTimeout(() => done(false), 15000);
+        const timer = setTimeout(() => done({ ok: false, error: "timeout" }), 15000);
 
         const req = https.request(
           `https://api.telegram.org/bot${token}/sendMessage`,
@@ -398,18 +398,29 @@ async function tgSendMessage(token, chatId, text, retries = 3) {
           (res) => {
             let d = "";
             res.on("data", (c) => { d += c; });
-            res.on("end", () => { clearTimeout(timer); done(res.statusCode >= 200 && res.statusCode < 300); });
-            res.on("error", () => { clearTimeout(timer); done(false); });
+            res.on("end", () => {
+              clearTimeout(timer);
+              try {
+                const json = JSON.parse(d);
+                done({ ok: json.ok, error: json.ok ? null : json.description });
+              } catch (_) {
+                done({ ok: res.statusCode >= 200 && res.statusCode < 300, error: d });
+              }
+            });
+            res.on("error", () => { clearTimeout(timer); done({ ok: false, error: "res error" }); });
           }
         );
-        req.on("error", () => { clearTimeout(timer); done(false); });
-        req.on("timeout", () => { clearTimeout(timer); try { req.destroy(); } catch (_) {} done(false); });
+        req.on("error", (e) => { clearTimeout(timer); done({ ok: false, error: e.message }); });
+        req.on("timeout", () => { clearTimeout(timer); try { req.destroy(); } catch (_) {} done({ ok: false, error: "req timeout" }); });
         req.write(payload);
         req.end();
       });
 
-      if (ok) return true;
-    } catch (_) {}
+      if (result.ok) return true;
+      console.error(`[TG] sendMessage failed (attempt ${attempt}): ${result.error}`);
+    } catch (e) {
+      console.error(`[TG] sendMessage exception (attempt ${attempt}): ${e.message}`);
+    }
 
     if (attempt < retries) await sleep(2000 * attempt);
   }
@@ -419,11 +430,11 @@ async function tgSendMessage(token, chatId, text, retries = 3) {
 async function tgSendDocument(token, chatId, content, filename, caption, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const ok = await new Promise((resolve) => {
+      const result = await new Promise((resolve) => {
         let resolved = false;
         const done = (val) => { if (!resolved) { resolved = true; resolve(val); } };
 
-        const timer = setTimeout(() => done(false), 30000);
+        const timer = setTimeout(() => done({ ok: false, error: "timeout" }), 30000);
 
         const FormData = require("form-data");
         const form = new FormData();
@@ -443,17 +454,28 @@ async function tgSendDocument(token, chatId, content, filename, caption, retries
           (res) => {
             let d = "";
             res.on("data", (c) => { d += c; });
-            res.on("end", () => { clearTimeout(timer); done(res.statusCode >= 200 && res.statusCode < 300); });
-            res.on("error", () => { clearTimeout(timer); done(false); });
+            res.on("end", () => {
+              clearTimeout(timer);
+              try {
+                const json = JSON.parse(d);
+                done({ ok: json.ok, error: json.ok ? null : json.description });
+              } catch (_) {
+                done({ ok: res.statusCode >= 200 && res.statusCode < 300, error: d });
+              }
+            });
+            res.on("error", () => { clearTimeout(timer); done({ ok: false, error: "res error" }); });
           }
         );
-        req.on("error", () => { clearTimeout(timer); done(false); });
-        req.on("timeout", () => { clearTimeout(timer); try { req.destroy(); } catch (_) {} done(false); });
+        req.on("error", (e) => { clearTimeout(timer); done({ ok: false, error: e.message }); });
+        req.on("timeout", () => { clearTimeout(timer); try { req.destroy(); } catch (_) {} done({ ok: false, error: "req timeout" }); });
         form.pipe(req);
       });
 
-      if (ok) return true;
-    } catch (_) {}
+      if (result.ok) return true;
+      console.error(`[TG] sendDocument failed (attempt ${attempt}): ${result.error}`);
+    } catch (e) {
+      console.error(`[TG] sendDocument exception (attempt ${attempt}): ${e.message}`);
+    }
 
     if (attempt < retries) await sleep(2000 * attempt);
   }
@@ -510,27 +532,34 @@ async function runWorker(workerId, sources, config) {
         continue;
       }
 
-      // Step 3: Handshake - /start
-      console.log(`${tag} /start -> ${targetId}`);
-      await tgSendMessage(token, targetId, "/start");
-      await sleep(500);
+      // Step 3: Send summary to target
+      const byType = {};
+      alive.forEach((p) => { byType[p.type] = (byType[p.type] || 0) + 1; });
+      const typeStr = Object.entries(byType).map(([t, c]) => `${t}:${c}`).join(" | ");
+      const summary =
+        `<b>Worker ${workerId + 1} — Proxy Check</b>\n` +
+        `Scraped: ${proxies.length}\n` +
+        `Live: <b>${alive.length}</b> | Dead: ${deadCount}\n` +
+        `Types: ${typeStr}\n` +
+        `Fastest: ${alive[0].ms}ms | Time: ${elapsed}s`;
 
-      // Step 4: /upload_proxy
-      console.log(`${tag} /upload_proxy`);
-      await tgSendMessage(token, targetId, "/upload_proxy");
-      await sleep(500);
+      console.log(`${tag} Sending summary to ${targetId}`);
+      const msgOk = await tgSendMessage(token, targetId, summary);
+      if (!msgOk) {
+        console.error(`${tag} Failed to send summary — check target_id and make sure user has started the bot`);
+        await sleep(delayMs);
+        continue;
+      }
 
-      // Step 5: Upload file
+      // Step 4: Send proxy file
       const fileContent = alive.map((p) => p.proxy).join("\n") + "\n";
       const filename = `worker${workerId + 1}_proxies.txt`;
-      const caption = `W${workerId + 1} | ${alive.length} live | Fastest: ${alive[0].ms}ms`;
+      const caption = `${alive.length} live proxies (ip:port) | Fastest: ${alive[0].ms}ms`;
       console.log(`${tag} Uploading ${alive.length} proxies`);
-      await tgSendDocument(token, targetId, fileContent, filename, caption);
-      await sleep(500);
-
-      // Step 6: /proxy_done
-      console.log(`${tag} /proxy_done`);
-      await tgSendMessage(token, targetId, "/proxy_done");
+      const fileOk = await tgSendDocument(token, targetId, fileContent, filename, caption);
+      if (!fileOk) {
+        console.error(`${tag} Failed to send file`);
+      }
 
       console.log(`${tag} Cycle done. Next in ${delayMs / 60000}m`);
     } catch (err) {
