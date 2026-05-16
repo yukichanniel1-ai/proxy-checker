@@ -1,20 +1,23 @@
 #!/usr/bin/env node
 /**
- * proxy-all.js -- All-in-One Proxy Scraper + Checker API
+ * proxy-all.js -- Ultra-Fast Proxy Scraper + Checker API (Railway Edition)
  *
- * - Scrapes 54 sources
- * - Checks proxies and adds them to the API IMMEDIATELY when found live
- * - No waiting — live proxies appear in the API as soon as verified
- * - Railway-stable: crash-proof, low memory, auto-restart safe
+ * - Scrapes 54 sources in parallel
+ * - Checks proxies with 400ms timeout, only 1-300ms accepted
+ * - Races HTTP + SOCKS5 + SOCKS4 in PARALLEL (not sequential)
+ * - TCP pre-filter eliminates dead proxies instantly
+ * - 500 concurrent checks for blazing speed
+ * - Railway-stable: memory-safe, crash-proof, auto-restart safe
  *
  * Endpoints:
- *   GET /               → raw ip:port (all types)
+ *   GET /               → raw ip:port (all types, 1-300ms only)
  *   GET /?type=http     → HTTP only
  *   GET /?type=socks4   → SOCKS4 only
  *   GET /?type=socks5   → SOCKS5 only
  *   GET /?format=json   → JSON with speed + type info
  *   GET /?limit=100     → limit results
- *   GET /health         → server stats
+ *   GET /download       → auto-download .txt file
+ *   GET /health         → server stats + memory info
  */
 
 const http = require("http");
@@ -23,9 +26,9 @@ const net = require("net");
 const fs = require("fs");
 const path = require("path");
 
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // CRASH PROTECTION — never let process die
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 let shuttingDown = false;
 
@@ -40,9 +43,9 @@ process.on("unhandledRejection", (reason) => {
 process.on("SIGTERM", () => { shuttingDown = true; console.log("[SHUTDOWN] SIGTERM"); });
 process.on("SIGINT", () => { shuttingDown = true; console.log("[SHUTDOWN] SIGINT"); });
 
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // CONFIG
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 const CONFIG_PATH = path.join(__dirname, "config.json");
 function loadConfig() {
@@ -50,9 +53,9 @@ function loadConfig() {
   catch (_) { return {}; }
 }
 
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // ALL PROXY SOURCES (54 sources)
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 const SOURCES = [
   { url: "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all" },
@@ -110,9 +113,9 @@ const SOURCES = [
   { url: "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5_RAW.txt" },
 ];
 
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // HELPERS
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 const IP_RE = /(\d{1,3}(?:\.\d{1,3}){3}:\d{1,5})/g;
 
@@ -129,9 +132,9 @@ function extractIps(t) {
   catch (_) { return []; }
 }
 
-// ═══════════════════════════════════════════════════════
-// SAFE HTTP GET
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// SAFE HTTP GET — crash-proof with double-timeout protection
+// ═══════════════════════════════════════════════════════════════════
 
 function httpGet(url, timeout) {
   return new Promise((resolve) => {
@@ -142,11 +145,11 @@ function httpGet(url, timeout) {
     const timer = setTimeout(() => {
       try { req.destroy(); } catch (_) {}
       done("");
-    }, timeout + 3000);
+    }, timeout + 2000);
 
     let req;
     try {
-      req = mod.get(url, { timeout, headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
+      req = mod.get(url, { timeout, headers: { "User-Agent": "Mozilla/5.0", "Connection": "close" } }, (res) => {
         const chunks = [];
         res.on("data", (c) => { chunks.push(c); });
         res.on("end", () => { clearTimeout(timer); done(Buffer.concat(chunks).toString()); });
@@ -159,9 +162,9 @@ function httpGet(url, timeout) {
   });
 }
 
-// ═══════════════════════════════════════════════════════
-// SCRAPER
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// SCRAPER — all sources in parallel
+// ═══════════════════════════════════════════════════════════════════
 
 async function scrapeAll() {
   const results = await Promise.allSettled(
@@ -199,9 +202,9 @@ async function scrapeAll() {
   return proxies;
 }
 
-// ═══════════════════════════════════════════════════════
-// PROXY CHECKER — streams results into cache immediately
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// PROXY CHECKER — Ultra-fast with parallel protocol racing
+// ═══════════════════════════════════════════════════════════════════
 
 const JUDGES = [
   "http://api.ipify.org?format=json",
@@ -210,13 +213,18 @@ const JUDGES = [
   "http://httpbin.org/ip",
 ];
 
+// TCP pre-filter — instant dead proxy elimination
 function tcpConnect(host, port, timeout) {
   return new Promise((resolve) => {
     let settled = false;
     const done = (val) => { if (!settled) { settled = true; resolve(val); } };
     try {
       const sock = new net.Socket();
-      const timer = setTimeout(() => { try { sock.destroy(); } catch (_) {} done(false); }, timeout);
+      sock.setNoDelay(true);
+      const timer = setTimeout(() => {
+        try { sock.destroy(); } catch (_) {}
+        done(false);
+      }, timeout);
       sock.on("error", () => { clearTimeout(timer); try { sock.destroy(); } catch (_) {} done(false); });
       sock.on("timeout", () => { clearTimeout(timer); try { sock.destroy(); } catch (_) {} done(false); });
       sock.connect(port, host, () => { clearTimeout(timer); try { sock.destroy(); } catch (_) {} done(true); });
@@ -224,99 +232,85 @@ function tcpConnect(host, port, timeout) {
   });
 }
 
-function checkHttp(proxy, judge, timeoutMs) {
+// Single protocol check — fully crash-proof with settled guard
+function checkProtocol(proxy, judge, protocol, timeoutMs) {
   return new Promise((resolve) => {
     let settled = false;
     const done = (val) => { if (!settled) { settled = true; resolve(val); } };
     const start = process.hrtime.bigint();
 
-    let agent, req;
-    const timer = setTimeout(() => {
+    let agent = null;
+    let req = null;
+
+    const cleanup = () => {
       try { if (req) req.destroy(); } catch (_) {}
       try { if (agent) agent.destroy(); } catch (_) {}
-      done(null);
-    }, timeoutMs + 1000);
+    };
+
+    const timer = setTimeout(() => { cleanup(); done(null); }, timeoutMs + 200);
 
     try {
-      const { HttpProxyAgent } = require("http-proxy-agent");
-      agent = new HttpProxyAgent(`http://${proxy}`);
+      if (protocol === "http") {
+        const { HttpProxyAgent } = require("http-proxy-agent");
+        agent = new HttpProxyAgent(`http://${proxy}`);
+      } else {
+        const { SocksProxyAgent } = require("socks-proxy-agent");
+        agent = new SocksProxyAgent(`${protocol}://${proxy}`);
+      }
     } catch (_) { clearTimeout(timer); done(null); return; }
 
     try {
       req = http.get(judge, { agent, timeout: timeoutMs }, (res) => {
         const chunks = [];
-        res.on("data", (c) => chunks.push(c));
+        res.on("data", (c) => { chunks.push(c); });
         res.on("end", () => {
           clearTimeout(timer);
           const ms = (Number(process.hrtime.bigint() - start) / 1e6) | 0;
-          try { agent.destroy(); } catch (_) {}
-          done(res.statusCode >= 200 && res.statusCode < 400 ? { ms, type: "http" } : null);
+          cleanup();
+          if (res.statusCode >= 200 && res.statusCode < 400) {
+            done({ ms, type: protocol });
+          } else {
+            done(null);
+          }
         });
-        res.on("error", () => { clearTimeout(timer); try { agent.destroy(); } catch (_) {} done(null); });
+        res.on("error", () => { clearTimeout(timer); cleanup(); done(null); });
       });
-      req.on("error", () => { clearTimeout(timer); try { agent.destroy(); } catch (_) {} done(null); });
-      req.on("timeout", () => { clearTimeout(timer); try { req.destroy(); agent.destroy(); } catch (_) {} done(null); });
-    } catch (_) { clearTimeout(timer); try { agent.destroy(); } catch (_) {} done(null); }
+      req.on("error", () => { clearTimeout(timer); cleanup(); done(null); });
+      req.on("timeout", () => { clearTimeout(timer); cleanup(); done(null); });
+    } catch (_) { clearTimeout(timer); cleanup(); done(null); }
   });
 }
 
-function checkSocks(proxy, judge, socksType, timeoutMs) {
+// Race ALL protocols in PARALLEL — first valid response wins
+// This is 3x faster than sequential checking
+function checkOneProxy(proxy, timeoutMs) {
   return new Promise((resolve) => {
     let settled = false;
     const done = (val) => { if (!settled) { settled = true; resolve(val); } };
-    const start = process.hrtime.bigint();
-
-    let agent, req;
-    const timer = setTimeout(() => {
-      try { if (req) req.destroy(); } catch (_) {}
-      try { if (agent) agent.destroy(); } catch (_) {}
-      done(null);
-    }, timeoutMs + 1000);
-
-    try {
-      const { SocksProxyAgent } = require("socks-proxy-agent");
-      agent = new SocksProxyAgent(`${socksType}://${proxy}`);
-    } catch (_) { clearTimeout(timer); done(null); return; }
-
-    try {
-      req = http.get(judge, { agent, timeout: timeoutMs }, (res) => {
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          clearTimeout(timer);
-          const ms = (Number(process.hrtime.bigint() - start) / 1e6) | 0;
-          try { agent.destroy(); } catch (_) {}
-          done(res.statusCode >= 200 && res.statusCode < 400 ? { ms, type: socksType } : null);
-        });
-        res.on("error", () => { clearTimeout(timer); try { agent.destroy(); } catch (_) {} done(null); });
-      });
-      req.on("error", () => { clearTimeout(timer); try { agent.destroy(); } catch (_) {} done(null); });
-      req.on("timeout", () => { clearTimeout(timer); try { req.destroy(); agent.destroy(); } catch (_) {} done(null); });
-    } catch (_) { clearTimeout(timer); try { agent.destroy(); } catch (_) {} done(null); }
-  });
-}
-
-async function checkOneProxy(proxy, timeoutMs) {
-  try {
-    const [host, portStr] = proxy.split(":");
-    const port = parseInt(portStr);
-    if (!host || isNaN(port)) return null;
-
-    const reachable = await tcpConnect(host, port, Math.min(timeoutMs, 1500));
-    if (!reachable) return null;
 
     const judge = JUDGES[Math.floor(Math.random() * JUDGES.length)];
-    const r1 = await checkHttp(proxy, judge, timeoutMs);
-    if (r1) return r1;
-    const r2 = await checkSocks(proxy, judge, "socks5", timeoutMs);
-    if (r2) return r2;
-    return await checkSocks(proxy, judge, "socks4", timeoutMs);
-  } catch (_) { return null; }
+
+    // Race all three protocols simultaneously
+    let pending = 3;
+    const finish = (result) => {
+      pending--;
+      if (result && !settled) {
+        settled = true;
+        resolve(result);
+      } else if (pending === 0 && !settled) {
+        resolve(null);
+      }
+    };
+
+    checkProtocol(proxy, judge, "http", timeoutMs).then(finish);
+    checkProtocol(proxy, judge, "socks5", timeoutMs).then(finish);
+    checkProtocol(proxy, judge, "socks4", timeoutMs).then(finish);
+  });
 }
 
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // LIVE CACHE — proxies appear here immediately when found
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 let liveProxies = [];
 let liveSet = new Set();
@@ -328,6 +322,7 @@ let stats = {
   checking: false,
   lastUpdate: null,
   cycle: 0,
+  peakMemory: 0,
 };
 
 function addLiveProxy(entry) {
@@ -346,9 +341,34 @@ function clearCache() {
   stats.dead = 0;
 }
 
-// ═══════════════════════════════════════════════════════
-// BACKGROUND CHECK — streams into cache
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// MEMORY MONITOR — prevent Railway OOM crashes
+// ═══════════════════════════════════════════════════════════════════
+
+function getMemoryMB() {
+  return Math.round(process.memoryUsage().rss / 1024 / 1024);
+}
+
+function checkMemory() {
+  const memMB = getMemoryMB();
+  if (memMB > stats.peakMemory) stats.peakMemory = memMB;
+
+  // If memory exceeds 450MB on Railway (512MB limit), force GC and trim cache
+  if (memMB > 450) {
+    console.warn(`[MEMORY] ${memMB}MB — trimming cache & forcing GC`);
+    // Keep only the fastest 500 proxies to free memory
+    if (liveProxies.length > 500) {
+      liveProxies = liveProxies.slice(0, 500);
+      liveSet = new Set(liveProxies.map(p => p.proxy));
+      stats.alive = liveProxies.length;
+    }
+    if (global.gc) try { global.gc(); } catch (_) {}
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BACKGROUND CHECK — ultra-fast with TCP pre-filter + parallel racing
+// ═══════════════════════════════════════════════════════════════════
 
 async function runCheck() {
   if (stats.checking || shuttingDown) return;
@@ -372,18 +392,55 @@ async function runCheck() {
 
     const config = loadConfig();
     const cfg = config.checker || {};
-    const timeoutMs = cfg.timeout_ms || 3000;
-    const maxConc = Math.min(cfg.max_concurrent || 200, 200);
-    const minMs = cfg.min_speed_ms || 5;
-    const maxMs = cfg.max_speed_ms || 1000;
+    const timeoutMs = cfg.timeout_ms || 400;
+    const maxConc = Math.min(cfg.max_concurrent || 500, 500);
+    const minMs = cfg.min_speed_ms || 1;
+    const maxMs = cfg.max_speed_ms || 300;
     const total = proxies.length;
 
-    console.log(`[CYCLE ${cycle}] Checking ${total} proxies (${maxConc} concurrent, ${timeoutMs}ms timeout)...`);
+    console.log(`[CYCLE ${cycle}] Checking ${total} proxies (${maxConc} concurrent, ${timeoutMs}ms timeout, ${minMs}-${maxMs}ms speed filter)...`);
 
-    for (let i = 0; i < total && !shuttingDown; i += maxConc) {
-      const batch = proxies.slice(i, i + maxConc);
+    // Phase 1: TCP pre-filter — eliminate unreachable proxies instantly
+    console.log(`[CYCLE ${cycle}] Phase 1: TCP pre-filter (500ms timeout)...`);
+    const tcpStart = Date.now();
+    const tcpConc = Math.min(maxConc * 2, 1000); // Higher concurrency for TCP checks
+    const reachable = [];
+
+    for (let i = 0; i < total && !shuttingDown; i += tcpConc) {
+      const batch = proxies.slice(i, i + tcpConc);
+      const results = await Promise.allSettled(
+        batch.map(async (proxy) => {
+          try {
+            const [host, portStr] = proxy.split(":");
+            const port = parseInt(portStr);
+            if (!host || isNaN(port)) return null;
+            const ok = await tcpConnect(host, port, 500);
+            return ok ? proxy : null;
+          } catch (_) { return null; }
+        })
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) reachable.push(r.value);
+      }
+    }
+
+    const tcpElapsed = ((Date.now() - tcpStart) / 1000).toFixed(1);
+    console.log(`[CYCLE ${cycle}] TCP pre-filter: ${reachable.length}/${total} reachable in ${tcpElapsed}s`);
+
+    if (reachable.length === 0) {
+      stats.checking = false;
+      return;
+    }
+
+    // Phase 2: Protocol check with parallel racing — only on reachable proxies
+    console.log(`[CYCLE ${cycle}] Phase 2: Protocol racing (${maxConc} concurrent, ${timeoutMs}ms timeout)...`);
+    const checkStart = Date.now();
+    const checkTotal = reachable.length;
+
+    for (let i = 0; i < checkTotal && !shuttingDown; i += maxConc) {
+      const batch = reachable.slice(i, i + maxConc);
       const batchNum = Math.floor(i / maxConc) + 1;
-      const totalBatches = Math.ceil(total / maxConc);
+      const totalBatches = Math.ceil(checkTotal / maxConc);
 
       try {
         const results = await Promise.allSettled(
@@ -407,26 +464,36 @@ async function runCheck() {
         console.error(`[CYCLE ${cycle}] Batch ${batchNum} error: ${err.message}`);
       }
 
-      if (batchNum % 5 === 0 || batchNum === totalBatches) {
-        console.log(`[CYCLE ${cycle}] Progress: ${Math.min(i + maxConc, total)}/${total} checked, ${stats.alive} alive`);
+      // Memory check every 5 batches
+      if (batchNum % 5 === 0) {
+        checkMemory();
+      }
+
+      if (batchNum % 10 === 0 || batchNum === totalBatches) {
+        console.log(`[CYCLE ${cycle}] Progress: ${Math.min(i + maxConc, checkTotal)}/${checkTotal} checked, ${stats.alive} alive, ${getMemoryMB()}MB`);
       }
     }
 
-    // Sort by speed
+    const checkElapsed = ((Date.now() - checkStart) / 1000).toFixed(1);
+
+    // Sort by speed (fastest first)
     liveProxies.sort((a, b) => a.ms - b.ms);
     stats.lastUpdate = new Date().toISOString();
-    console.log(`[CYCLE ${cycle}] Done: ${stats.alive} alive, ${stats.dead} dead`);
+    console.log(`[CYCLE ${cycle}] Done in ${checkElapsed}s: ${stats.alive} alive (1-${maxMs}ms), ${stats.dead} dead, ${getMemoryMB()}MB`);
+
+    // Force GC after each cycle
+    if (global.gc) try { global.gc(); } catch (_) {}
+
   } catch (err) {
     console.error(`[CYCLE ${cycle}] Error: ${err.message}`);
   }
 
   stats.checking = false;
-  if (global.gc) try { global.gc(); } catch (_) {}
 }
 
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // HTTP API SERVER
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 function startServer() {
   const port = parseInt(process.env.PORT, 10) || 3000;
@@ -445,7 +512,8 @@ function startServer() {
         res.end(JSON.stringify({
           status: shuttingDown ? "shutting_down" : stats.checking ? "checking" : "ready",
           uptime: Math.floor(process.uptime()),
-          memory: Math.round(process.memoryUsage().rss / 1024 / 1024) + "MB",
+          memory_mb: getMemoryMB(),
+          peak_memory_mb: stats.peakMemory,
           ...stats,
         }));
         return;
@@ -454,7 +522,7 @@ function startServer() {
       // Auto-download endpoint — saves .txt file directly (all live proxies)
       if (pathname === "/download") {
         const filtered = liveProxies;
-        const filename = `live_proxies_${filtered.length}.txt`;
+        const filename = `fast_proxies_1-300ms_${filtered.length}.txt`;
         const body = filtered.map((p) => p.proxy).join("\n") + (filtered.length ? "\n" : "");
 
         res.writeHead(200, {
@@ -463,6 +531,7 @@ function startServer() {
           "Content-Length": Buffer.byteLength(body),
           "X-Total-Alive": String(stats.alive),
           "X-Returned": String(filtered.length),
+          "X-Speed-Range": "1-300ms",
         });
         res.end(body);
         return;
@@ -484,6 +553,7 @@ function startServer() {
             returned: filtered.length,
             last_update: stats.lastUpdate,
             type_filter: type,
+            speed_range: "1-300ms",
             proxies: filtered.map((p) => ({ proxy: p.proxy, ms: p.ms, type: p.type })),
           }));
         } else {
@@ -492,6 +562,7 @@ function startServer() {
             "X-Total-Alive": String(stats.alive),
             "X-Checking": String(stats.checking),
             "X-Returned": String(filtered.length),
+            "X-Speed-Range": "1-300ms",
           });
           res.end(filtered.map((p) => p.proxy).join("\n") + (filtered.length ? "\n" : ""));
         }
@@ -509,14 +580,32 @@ function startServer() {
     }
   });
 
-  server.on("error", (err) => console.error(`[SERVER] ${err.message}`));
+  // Prevent server crashes
+  server.on("error", (err) => {
+    console.error(`[SERVER] ${err.message}`);
+    // Don't let server errors crash the process
+  });
+
+  // Handle connection errors gracefully
+  server.on("clientError", (err, socket) => {
+    try { if (!socket.destroyed) socket.destroy(); } catch (_) {}
+  });
+
   server.listen(port, "0.0.0.0", () => {
-    console.log(`[SERVER] Listening on 0.0.0.0:${port}`);
-    console.log(`  GET /             → raw ip:port`);
+    console.log("════════════════════════════════════════════════════");
+    console.log("  Proxy Manager API (Ultra-Fast Railway Edition)");
+    console.log("════════════════════════════════════════════════════");
+    console.log(`  Speed filter: 1-300ms ONLY`);
+    console.log(`  Sources: ${SOURCES.length}`);
+    console.log(`  Refresh: ${(refreshMs / 60000).toFixed(0)}m`);
+    console.log(`  Concurrency: 500 (TCP pre-filter: 1000)`);
+    console.log(`  Timeout: 400ms`);
+    console.log("════════════════════════════════════════════════════");
+    console.log(`  GET /             → raw ip:port (1-300ms only)`);
     console.log(`  GET /?type=http   → HTTP only`);
     console.log(`  GET /?format=json → JSON`);
     console.log(`  GET /download     → auto-download .txt`);
-    console.log(`  GET /health       → stats\n`);
+    console.log(`  GET /health       → stats + memory\n`);
   });
 
   // Start first check immediately
@@ -527,25 +616,31 @@ function startServer() {
     if (!shuttingDown && !stats.checking) runCheck();
   }, refreshMs);
 
+  // Memory monitor — check every 30s
+  setInterval(() => {
+    checkMemory();
+  }, 30000);
+
   return server;
 }
 
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // MAIN
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 function main() {
   const config = loadConfig();
   const cfg = config.checker || {};
 
-  console.log("═══════════════════════════════════════");
-  console.log("  Proxy Manager API (Stable)");
-  console.log("═══════════════════════════════════════");
+  console.log("════════════════════════════════════════════════════");
+  console.log("  Proxy Manager API (Ultra-Fast Railway Edition)");
+  console.log("════════════════════════════════════════════════════");
   console.log(`Sources: ${SOURCES.length}`);
   console.log(`Refresh: ${cfg.refresh_interval_minutes || 5}m`);
-  console.log(`Concurrency: ${Math.min(cfg.max_concurrent || 200, 200)}`);
-  console.log(`Timeout: ${cfg.timeout_ms || 3000}ms`);
-  console.log("═══════════════════════════════════════\n");
+  console.log(`Concurrency: ${Math.min(cfg.max_concurrent || 500, 500)}`);
+  console.log(`Timeout: ${cfg.timeout_ms || 400}ms`);
+  console.log(`Speed: ${cfg.min_speed_ms || 1}-${cfg.max_speed_ms || 300}ms ONLY`);
+  console.log("════════════════════════════════════════════════════\n");
 
   startServer();
 }
